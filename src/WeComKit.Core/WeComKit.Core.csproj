@@ -14,8 +14,8 @@
     <PackageTags>wecom;wechat-work;wechat-mp;mini-program;encryption</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageProjectUrl>https://github.com/WeComKit/WeComKit</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/WeComKit/WeComKit</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/castorhrio/WeComKit</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/castorhrio/WeComKit</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReleaseNotes>First stable release for WeCom and WeChat protocol helpers, callback signature verification, message cryptography, RSA helper, and mini-program data decryption.</PackageReleaseNotes>
     <IncludeSymbols>true</IncludeSymbols>
