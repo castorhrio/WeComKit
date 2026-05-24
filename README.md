@@ -8,18 +8,18 @@
 
 WeComKit 是一个面向 .NET 8 的企业微信（WeCom / WeChat Work）集成工具库。它把企业微信对接中常见但容易写错的基础协议、HTTP API、群机器人、第三方应用授权和会话存档官方 SDK 封装成可独立引用的 NuGet 包。
 
-这个项目的目标不是绑定某个业务系统，而是提供稳定、清晰、可组合的基础封装，让应用层可以专注处理自己的用户、订单、审批、消息归档或内部流程。
+这个项目的目标是提供稳定、清晰、可组合的企业微信基础封装，让应用层可以按自己的产品场景组织业务流程。
 
 ## 项目定位
 
 企业微信官方文档覆盖面很广，但真实项目里通常会反复遇到这些问题：
 
 - 回调签名、AES 解密、CorpId / AppId 校验容易写错。
-- AccessToken 缓存、过期刷新、错误码处理容易分散在业务代码里。
+- AccessToken 缓存、过期刷新、错误码处理容易分散在应用代码里。
 - 自建应用、OAuth、通讯录、素材、应用消息、群机器人、第三方应用 suite 授权接口重复封装成本高。
 - 会话存档官方 SDK 只提供 native dll / so，Windows 和 Linux 部署方式不同，.NET 项目需要额外处理加载、诊断和线程安全。
 
-WeComKit 将这些通用问题封装在基础库中，同时明确不包含业务系统逻辑。
+WeComKit 将这些通用问题封装在基础库中，应用层只需要组合这些能力完成自己的产品功能。
 
 ## 包结构
 
@@ -33,7 +33,7 @@ WeComKit 将这些通用问题封装在基础库中，同时明确不包含业�
 
 ```mermaid
 flowchart LR
-    App["Your Application<br/>业务系统 / Web API / Worker"]
+    App["Your Application<br/>Web API / Worker / Service"]
 
     subgraph WeComKit["WeComKit packages"]
         Core["WeComKit.Core<br/>签名 / AES / RSA / 小程序解密"]
@@ -64,14 +64,7 @@ WeComKit 只处理企业微信集成的基础能力：
 - API 层：HTTP 调用、AccessToken 缓存、token 失效自动刷新重试、官方响应模型。
 - SDK 层：会话存档 native SDK 加载、诊断、线程安全封装、消息拉取和媒体下载。
 
-这些内容不会进入通用库：
-
-- 订单导入、客户匹配、渠道匹配、Excel 模板识别。
-- OSS、数据库实体、业务状态流转、定时任务。
-- 吉客云或任何特定 ERP / OMS / WMS 对接。
-- 会话存档消息的业务消费流程。
-
-应用层应该自己决定消息如何入库、如何匹配业务对象、如何触发后续流程。
+WeComKit 不接管应用自身的数据模型、存储方案和产品流程。库只负责企业微信协议、API 和会话存档 SDK 的基础封装。
 
 ## 功能矩阵
 
@@ -322,7 +315,7 @@ WeComKit 遵循语义化版本控制：
 
 WeComKit is a .NET 8 toolkit for WeCom / WeChat Work integrations. It packages protocol helpers, common HTTP APIs, bot webhook support, third-party suite authorization, and a managed wrapper for the official message-audit native SDK into separate NuGet packages.
 
-The project focuses on reusable infrastructure. It does not include business-specific logic such as order import, customer mapping, ERP integration, OSS storage, scheduled jobs, or message archive workflows.
+The project focuses on reusable WeCom infrastructure. Application data models, storage choices, and product workflows stay in the consuming application.
 
 ## Packages
 
