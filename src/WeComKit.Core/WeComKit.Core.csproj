@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- NuGet 包信息 -->
+    <PackageId>WeComKit.Core</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>WeComKit</Authors>
+    <Copyright>Copyright (c) 2026 WeComKit contributors</Copyright>
+    <Description>企业微信 / 微信公众号基础协议工具库：消息加解密、签名验证、RSA 解密、小程序数据解密。</Description>
+    <PackageTags>wecom;wechat-work;wechat-mp;mini-program;encryption</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/WeComKit/WeComKit</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/WeComKit/WeComKit</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReleaseNotes>First stable release for WeCom and WeChat protocol helpers, callback signature verification, message cryptography, RSA helper, and mini-program data decryption.</PackageReleaseNotes>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

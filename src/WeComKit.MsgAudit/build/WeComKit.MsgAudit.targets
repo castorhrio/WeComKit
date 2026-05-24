@@ -1,0 +1,39 @@
+<Project>
+  <!--
+    WeComKit.MsgAudit 构建集成
+    支持通过 MSBuild 属性在构建时复制 SDK 文件到输出目录
+
+    使用方式：在消费项目的 .csproj 中设置:
+      <WeComMsgAuditSdkPath>C:\path\to\wecom\sdk\files</WeComMsgAuditSdkPath>
+    
+    构建时会自动将该目录下的 WeWorkFinanceSdk.dll / .so 及依赖复制到输出目录。
+  -->
+
+  <PropertyGroup>
+    <!-- 优先使用 MSBuild 属性，回退到环境变量 -->
+    <WeComMsgAuditSdkPath Condition="'$(WeComMsgAuditSdkPath)' == ''">$([System.Environment]::GetEnvironmentVariable('WECOM_MSG_AUDIT_SDK_DIR'))</WeComMsgAuditSdkPath>
+    <!-- 默认不复制，避免 NuGet 包对消费项目构建产生隐式副作用。 -->
+    <WeComMsgAuditCopySdkFiles Condition="'$(WeComMsgAuditCopySdkFiles)' == ''">false</WeComMsgAuditCopySdkFiles>
+  </PropertyGroup>
+
+  <Target Name="CopyWeComMsgAuditSdk"
+          Condition="'$(WeComMsgAuditCopySdkFiles)' == 'true' And '$(WeComMsgAuditSdkPath)' != '' And Exists('$(WeComMsgAuditSdkPath)')"
+          AfterTargets="Build">
+
+    <Message Importance="high"
+             Text="[WeComKit.MsgAudit] 从 $(WeComMsgAuditSdkPath) 复制 SDK 文件到输出目录" />
+
+    <ItemGroup>
+      <_WeComSdkFiles Include="$(WeComMsgAuditSdkPath)\**\*.dll;$(WeComMsgAuditSdkPath)\**\*.so" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(_WeComSdkFiles)"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true"
+          Retries="3"
+          RetryDelayMilliseconds="300" />
+
+    <Message Importance="normal"
+             Text="[WeComKit.MsgAudit] SDK 文件复制完成: @(_WeComSdkFiles->Count()) 个文件" />
+  </Target>
+</Project>

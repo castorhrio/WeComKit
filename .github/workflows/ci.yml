@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore WeComKit.sln
+
+      - name: Build
+        run: dotnet build WeComKit.sln -c Release --no-restore
+
+      - name: Test
+        run: dotnet test WeComKit.sln -c Release --no-build
+
+      - name: Pack
+        run: dotnet pack WeComKit.sln -c Release --no-build -o artifacts/packages

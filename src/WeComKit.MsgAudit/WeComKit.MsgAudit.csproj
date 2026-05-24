@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- NuGet 包信息 -->
+    <PackageId>WeComKit.MsgAudit</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>WeComKit</Authors>
+    <Copyright>Copyright (c) 2026 WeComKit contributors</Copyright>
+    <Description>企业微信会话存档 SDK 托管封装，线程安全、支持异步、显式加载官方原生 SDK。</Description>
+    <PackageTags>wecom;wechat-work;msg-audit;session-archive</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/WeComKit/WeComKit</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/WeComKit/WeComKit</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReleaseNotes>First stable release for the managed WeCom message-audit native SDK wrapper with explicit SDK path resolution and diagnostics.</PackageReleaseNotes>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+
+    <!-- 包中不包含任何原生二进制文件，由 FinanceSdkBootstrapper 在运行时发现 -->
+    <NoWarn>$(NoWarn);NU5100;NU5110;NU5111</NoWarn>
+  </PropertyGroup>
+
+  <!-- build/ 目录下的 .targets 会注入到消费项目中 -->
+  <ItemGroup>
+    <None Include="build\WeComKit.MsgAudit.targets" Pack="true" PackagePath="build\WeComKit.MsgAudit.targets" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WeComKit.Core\WeComKit.Core.csproj" />
+  </ItemGroup>
+
+</Project>

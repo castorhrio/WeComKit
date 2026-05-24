@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <PackageId>WeComKit.Api</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>WeComKit</Authors>
+    <Copyright>Copyright (c) 2026 WeComKit contributors</Copyright>
+    <Description>企业微信 API 客户端：AccessToken、OAuth、通讯录、素材、应用消息、机器人 webhook、第三方应用 suite 授权。</Description>
+    <PackageTags>wecom;wechat-work;contacts;message;media;oauth;bot;suite</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/WeComKit/WeComKit</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/WeComKit/WeComKit</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReleaseNotes>First stable release for common WeCom application APIs, OAuth, bot webhook, suite authorization, and media/message/contact clients.</PackageReleaseNotes>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WeComKit.Core\WeComKit.Core.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>
