@@ -141,8 +141,13 @@ public class WeComHttpClient : IDisposable
             }
 
             var lifetime = TimeSpan.FromSeconds(result.ExpiresIn);
-            var effectiveSkew = _options.TokenRefreshSkew < lifetime
-                ? _options.TokenRefreshSkew
+            // 配置绑定器（IConfiguration）会绕过属性 setter 直接写 backing field，
+            // 因此这里在取用时再做一次非负钳制，避免负 skew 把缓存有效期延长到真实过期之后。
+            var configuredSkew = _options.TokenRefreshSkew < TimeSpan.Zero
+                ? TimeSpan.Zero
+                : _options.TokenRefreshSkew;
+            var effectiveSkew = configuredSkew < lifetime
+                ? configuredSkew
                 : lifetime / 2;
             _token = result.AccessToken;
             _tokenExpiry = DateTime.UtcNow + lifetime - effectiveSkew;
@@ -368,6 +373,9 @@ public class WeComHttpClient : IDisposable
 
     public void Dispose()
     {
+        // 清除缓存的 access_token，避免在 GC 回收前长期留存。
+        _token = null;
+        _tokenExpiry = DateTime.MinValue;
         _tokenLock.Dispose();
     }
 

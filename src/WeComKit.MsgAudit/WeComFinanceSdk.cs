@@ -596,11 +596,17 @@ public class WeComFinanceSdk : IDisposable, IAsyncDisposable, IMsgAuditChatDataS
                 finished = FinanceSdkNative.IsMediaDataFinish(media) == 1;
                 if (!finished)
                 {
+                    // 续传 buffer 是下一次 GetMediaData 的游标输入。
+                    // 若为非法值（空指针 / 非正长度 / 超上限），不能回退为空串——
+                    // 否则 native 会从头重新分页，导致重复数据或无法终止。
                     var outIndexPtr = FinanceSdkNative.GetOutIndexBuf(media);
                     var outIndexLen = FinanceSdkNative.GetIndexLen(media);
-                    indexBuf = (outIndexPtr != IntPtr.Zero && outIndexLen > 0)
-                        ? Marshal.PtrToStringUTF8(outIndexPtr, outIndexLen) ?? ""
-                        : "";
+                    const int MaxIndexBufBytes = 1024;
+                    if (outIndexPtr == IntPtr.Zero || outIndexLen <= 0 || outIndexLen > MaxIndexBufBytes)
+                    {
+                        throw new WeComFinanceSdkException(-1, "GetMediaData（续传 buffer 非法）");
+                    }
+                    indexBuf = Marshal.PtrToStringUTF8(outIndexPtr, outIndexLen) ?? "";
                 }
             }
             catch (Exception ex) when (ex is AccessViolationException or SEHException)

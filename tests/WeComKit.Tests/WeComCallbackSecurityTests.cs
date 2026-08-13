@@ -106,6 +106,16 @@ public class WeComCallbackSecurityTests
     }
 
     [Fact]
+    public void DecryptMsg_NonBlockAlignedCiphertext_UsesUniformErrorMessage()
+    {
+        // 长度非 16 整数倍的密文应在 AESDecrypt 入口处被拒绝，走统一的“解密失败”错误路径，
+        // 而不是让 CryptoStream 收尾时抛出框架自带异常（泄漏实现细节）。
+        var crypt = NewCrypt();
+        var ex = Assert.Throws<CryptographicException>(() => crypt.DecryptMsg(Convert.ToBase64String(new byte[1])));
+        Assert.Equal("解密失败", ex.Message);
+    }
+
+    [Fact]
     public void DecryptMsg_RejectsCorruptedCiphertext_Deterministically()
     {
         var crypt = NewCrypt();
