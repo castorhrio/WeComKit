@@ -98,7 +98,7 @@ public class WeComBotApi
         };
 
         using var response = await _http.PostAsJsonAsync(url, request, WeComHttpClient.JsonOptions, ct);
-        return await WeComHttpClient.ReadApiResultAsync<WeComBotMessageResponse>(response, "POST bot message", ct);
+        return await WeComHttpClient.ReadApiResultAsync<WeComBotMessageResponse>(response, "POST bot message", url, ct);
     }
 
     private async Task<WeComBotMessageResponse> SendMarkdownAsync(string url, string content, CancellationToken ct)
@@ -114,6 +114,6 @@ public class WeComBotApi
         };
 
         using var response = await _http.PostAsJsonAsync(url, request, WeComHttpClient.JsonOptions, ct);
-        return await WeComHttpClient.ReadApiResultAsync<WeComBotMessageResponse>(response, "POST bot message", ct);
+        return await WeComHttpClient.ReadApiResultAsync<WeComBotMessageResponse>(response, "POST bot message", url, ct);
     }
 }

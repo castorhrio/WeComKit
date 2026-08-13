@@ -109,11 +109,13 @@ public class WeComCallbackSecurityTests
     public void DecryptMsg_RejectsCorruptedCiphertext_Deterministically()
     {
         var crypt = NewCrypt();
-        // 用真实密文，确定性地破坏最后一个密文字节。
-        // 解密后 PKCS#7 padding 与明文长度/CorpId 校验必然失败 → CryptographicException。
-        // （不使用随机数据：随机字节存在小概率合法 padding，导致非确定性。）
+        // 用真实密文，确定性地翻转倒数第二个 AES 块的最后一字节（encrypted[^17]）。
+        // AES-CBC 中该字节扩散到最后一个明文块，会同时扰动 padding 计数与 padding 字节内容，
+        // 从而把任何合法 1–32 的 padding 值都强制移出有效范围 → CryptographicException（确定性）。
+        // 相比之下，翻转 encrypted[^1] 只改最后一个明文字节，仍有小概率恰好成为合法 padding。
+        // （PlainPayload 足够长，保证密文 >= 32 字节，[^17] 下标有效。）
         var encrypted = Convert.FromBase64String(crypt.EncryptMsg(PlainPayload));
-        encrypted[^1] ^= 0xFF; // 确定性翻转最后一字节
+        encrypted[^17] ^= 0xFF;
 
         Assert.Throws<CryptographicException>(() => crypt.DecryptMsg(Convert.ToBase64String(encrypted)));
     }
