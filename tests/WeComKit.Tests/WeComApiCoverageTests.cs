@@ -66,11 +66,45 @@ public class WeComApiCoverageTests
     }
 
     [Fact]
-    public async Task SuiteApi_HttpFailure_OperationAndMessage_DoNotLeakSuiteAccessToken()
+    public async Task SuiteGet_HttpFailure_PreservesRequestPath_AndDoesNotLeakSuiteAccessToken()
     {
         // suite_access_token 出现在 path 查询串中；HTTP 失败时 operation 文本会被插值进异常。
-        // 异常的 ErrorMessage / Message 不得包含 token 明文。
+        // 异常的 ErrorMessage / Message / RequestPath 不得包含 token 明文，且 RequestPath 必须可还原。
         const string secretToken = "SECRET_SUITE_TOKEN_VALUE";
+        var ex = await InvokeSuiteFailure(api => api.GetPreAuthCodeAsync(secretToken));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, ex.HttpStatus);
+        Assert.NotNull(ex.RequestPath);
+        Assert.NotEmpty(ex.RequestPath!);
+        Assert.Contains("/cgi-bin/service/get_pre_auth_code", ex.RequestPath!);
+        Assert.DoesNotContain(secretToken, ex.ErrorMessage);
+        Assert.DoesNotContain(secretToken, ex.Message);
+        Assert.DoesNotContain(secretToken, ex.RequestPath!);
+    }
+
+    [Fact]
+    public async Task SuitePost_HttpFailure_PreservesRequestPath_AndDoesNotLeakSuiteAccessToken()
+    {
+        // 覆盖 PostAsync 路径（与 GetAsync 是独立的代码分支，同样需要验签 operation/RequestPath 不泄漏 token）。
+        const string secretToken = "SECRET_SUITE_TOKEN_VALUE";
+        var ex = await InvokeSuiteFailure(api =>
+            api.GetPermanentCodeAsync(secretToken, "auth-code-value"));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, ex.HttpStatus);
+        Assert.NotNull(ex.RequestPath);
+        Assert.NotEmpty(ex.RequestPath!);
+        Assert.Contains("/cgi-bin/service/get_permanent_code", ex.RequestPath!);
+        Assert.DoesNotContain(secretToken, ex.ErrorMessage);
+        Assert.DoesNotContain(secretToken, ex.Message);
+        Assert.DoesNotContain(secretToken, ex.RequestPath!);
+    }
+
+    /// <summary>
+    /// 构造一个永远返回 500 的 SuiteApi，执行给定调用并返回其抛出的 WeComApiException。
+    /// 复用 GET/POST 失败用例的公共装配。
+    /// </summary>
+    private static async Task<WeComApiException> InvokeSuiteFailure(Func<WeComSuiteApi, Task> call)
+    {
         var handler = new QueueHandler(
             new HttpResponseMessage(HttpStatusCode.InternalServerError)
             {
@@ -83,12 +117,7 @@ public class WeComApiCoverageTests
             SuiteSecret = "suite-secret"
         });
 
-        var ex = await Assert.ThrowsAsync<WeComApiException>(() => api.GetPreAuthCodeAsync(secretToken));
-
-        Assert.Equal(HttpStatusCode.InternalServerError, ex.HttpStatus);
-        Assert.DoesNotContain(secretToken, ex.ErrorMessage);
-        Assert.DoesNotContain(secretToken, ex.Message);
-        Assert.DoesNotContain(secretToken, ex.RequestPath ?? string.Empty); // RequestPath 也经脱敏
+        return await Assert.ThrowsAsync<WeComApiException>(() => call(api));
     }
 
     [Fact]
