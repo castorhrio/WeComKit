@@ -22,12 +22,52 @@ public static class WeComKitServiceExtensions
     }
 
     /// <summary>
+    /// 注册企业微信 API 服务，并允许对 <see cref="HttpClient"/> 进行应用层配置
+    /// （Timeout / BaseAddress / DefaultRequestHeaders）。
+    /// </summary>
+    /// <remarks>
+    /// 此重载仅支持 <see cref="HttpClient"/> 层面的配置。
+    /// 如需自定义 <see cref="HttpMessageHandler"/> / 代理 / 主处理器，
+    /// 请改用返回 <c>IHttpClientBuilder</c> 的标准方式，例如：
+    /// <code>
+    /// services.AddHttpClient("WeComKit")
+    ///         .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { Proxy = new WebProxy("...") });
+    /// </code>
+    /// </remarks>
+    /// <param name="services">服务集合</param>
+    /// <param name="configure">WeComOptions 配置回调</param>
+    /// <param name="configureHttpClient"><see cref="HttpClient"/> 配置回调</param>
+    public static IServiceCollection AddWeComKit(
+        this IServiceCollection services,
+        Action<WeComOptions> configure,
+        Action<HttpClient> configureHttpClient)
+    {
+        var options = new WeComOptions();
+        configure(options);
+        return AddWeComKit(services, options, configureHttpClient);
+    }
+
+    /// <summary>
     /// 注册企业微信 API 服务（从配置读取）
     /// </summary>
     public static IServiceCollection AddWeComKit(this IServiceCollection services, WeComOptions options)
     {
+        return AddWeComKit(services, options, configureHttpClient: null);
+    }
+
+    /// <summary>
+    /// 注册企业微信 API 服务（从配置读取，可配置 HttpClient）
+    /// </summary>
+    public static IServiceCollection AddWeComKit(
+        this IServiceCollection services,
+        WeComOptions options,
+        Action<HttpClient>? configureHttpClient)
+    {
         services.AddSingleton(options);
-        services.AddHttpClient("WeComKit");
+        var clientBuilder = services.AddHttpClient("WeComKit");
+        if (configureHttpClient is not null)
+            clientBuilder.ConfigureHttpClient(configureHttpClient);
+
         services.AddSingleton(sp =>
         {
             var factory = sp.GetRequiredService<IHttpClientFactory>();

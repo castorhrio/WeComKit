@@ -7,7 +7,7 @@
 
     <!-- NuGet 包信息 -->
     <PackageId>WeComKit.Core</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Authors>WeComKit</Authors>
     <Copyright>Copyright (c) 2026 WeComKit contributors</Copyright>
     <Description>企业微信 / 微信公众号基础协议工具库：消息加解密、签名验证、RSA 解密、小程序数据解密。</Description>
@@ -17,7 +17,7 @@
     <PackageProjectUrl>https://github.com/castorhrio/WeComKit</PackageProjectUrl>
     <RepositoryUrl>https://github.com/castorhrio/WeComKit</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageReleaseNotes>First stable release for WeCom and WeChat protocol helpers, callback signature verification, message cryptography, RSA helper, and mini-program data decryption.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.1.0: Constant-time signature comparison, configurable callback timestamp validation, replay-protection extension point, secure XML parser, and full VerifyAndDecryptAsync pipeline.</PackageReleaseNotes>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>

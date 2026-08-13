@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using WeComKit.Api;
 using WeComKit.Api.Http;
+using WeComKit.Api.Models;
 
 namespace WeComKit.Tests;
 
@@ -57,6 +58,106 @@ public class WeComHttpClientTests
         Assert.Contains("access_token=token-2", handler.Requests[3].RequestUri!.Query);
     }
 
+    [Fact]
+    public async Task GetAccessTokenAsync_ConcurrentCallersTriggerExactlyOneRefresh()
+    {
+        // single-flight：100 个并发调用只应触发 1 次 token 请求
+        var handler = new CountingHandler(
+            """{"errcode":0,"errmsg":"ok","access_token":"token-concurrent","expires_in":7200}""");
+        var client = CreateClient(handler);
+
+        var tasks = Enumerable.Range(0, 100)
+            .Select(_ => client.GetAccessTokenAsync())
+            .ToArray();
+        var tokens = await Task.WhenAll(tasks);
+
+        Assert.All(tokens, t => Assert.Equal("token-concurrent", t));
+        Assert.Equal(1, handler.TokenRequestCount);
+    }
+
+    [Fact]
+    public async Task GetAccessTokenAsync_HonorsConfigurableRefreshSkew()
+    {
+        // skew=1 分钟，expires_in=120s → 缓存有效期 ≈ 60s
+        // 立即第二次调用应命中缓存（仅 1 次请求）
+        var handler = new QueueHandler(
+            JsonResponse("""{"errcode":0,"errmsg":"ok","access_token":"token-skew","expires_in":120}"""));
+        var options = BaseOptions();
+        options.TokenRefreshSkew = TimeSpan.FromMinutes(1);
+        var client = CreateClientWithOptions(handler, options);
+
+        var first = await client.GetAccessTokenAsync();
+        var second = await client.GetAccessTokenAsync();
+
+        Assert.Equal("token-skew", first);
+        Assert.Equal("token-skew", second);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task GetAccessTokenAsync_ClampsSkewWhenLargerThanLifetime_StillCaches()
+    {
+        // expires_in=60s, skew=5min → clamp 到 30s，token 仍被缓存（避免排队打爆）
+        var handler = new QueueHandler(
+            JsonResponse("""{"errcode":0,"errmsg":"ok","access_token":"token-clamp","expires_in":60}"""));
+        var options = BaseOptions();
+        options.TokenRefreshSkew = TimeSpan.FromMinutes(5);
+        var client = CreateClientWithOptions(handler, options);
+
+        var first = await client.GetAccessTokenAsync();
+        var second = await client.GetAccessTokenAsync();
+
+        Assert.Equal("token-clamp", first);
+        Assert.Equal("token-clamp", second);
+        Assert.Single(handler.Requests); // 并发/连续调用都命中同一缓存
+    }
+
+    [Fact]
+    public async Task GetAccessTokenAsync_DoesNotCacheWhenExpiresInInvalid()
+    {
+        // expires_in=0 → 非法，不缓存；下一次调用重新获取
+        var handler = new QueueHandler(
+            JsonResponse("""{"errcode":0,"errmsg":"ok","access_token":"token-a","expires_in":0}"""),
+            JsonResponse("""{"errcode":0,"errmsg":"ok","access_token":"token-b","expires_in":7200}"""));
+        var client = CreateClient(handler);
+
+        var first = await client.GetAccessTokenAsync();
+        var second = await client.GetAccessTokenAsync();
+
+        Assert.Equal("token-a", first);
+        Assert.Equal("token-b", second);
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task GetAccessTokenAsync_PropagatesRefreshFailure()
+    {
+        // 服务端返回 errcode != 0 → 抛 WeComApiException
+        var handler = new QueueHandler(
+            JsonResponse("""{"errcode":40029,"errmsg":"invalid code"}"""));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<WeComApiException>(() => client.GetAccessTokenAsync());
+    }
+
+    [Fact]
+    public async Task GetAccessTokenAsync_RespectsCancellation()
+    {
+        var handler = new NeverRespondingHandler();
+        var client = CreateClient(handler);
+        using var cts = new CancellationTokenSource();
+        cts.CancelAfter(TimeSpan.FromMilliseconds(100));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.GetAccessTokenAsync(cts.Token));
+    }
+
+    [Fact]
+    public void TokenRefreshSkew_RejectsNegativeValue()
+    {
+        var options = BaseOptions();
+        Assert.Throws<ArgumentOutOfRangeException>(() => options.TokenRefreshSkew = TimeSpan.FromMinutes(-1));
+    }
+
     private static WeComHttpClient CreateClient(HttpMessageHandler handler)
     {
         return new WeComHttpClient(new HttpClient(handler), new WeComOptions
@@ -67,6 +168,19 @@ public class WeComHttpClientTests
             AgentId = "1000002"
         });
     }
+
+    private static WeComHttpClient CreateClientWithOptions(HttpMessageHandler handler, WeComOptions options)
+    {
+        return new WeComHttpClient(new HttpClient(handler), options);
+    }
+
+    private static WeComOptions BaseOptions() => new()
+    {
+        ApiUrl = "https://example.test",
+        CorpId = "corp-id",
+        Secret = "secret",
+        AgentId = "1000002"
+    };
 
     private static HttpResponseMessage JsonResponse(string json)
     {
@@ -99,5 +213,44 @@ public class WeComHttpClientTests
 
     private sealed class TestApiResult : WeComKit.Api.Models.WeComApiResult
     {
+    }
+
+    /// <summary>
+    /// 对所有请求返回同一响应，并统计 gettoken 请求次数（用于 single-flight 验证）。
+    /// </summary>
+    private sealed class CountingHandler : HttpMessageHandler
+    {
+        private readonly string _tokenJson;
+        public int TokenRequestCount;
+
+        public CountingHandler(string tokenJson) => _tokenJson = tokenJson;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/gettoken", StringComparison.Ordinal))
+                Interlocked.Increment(ref TokenRequestCount);
+
+            // 模拟少量网络延迟，放大并发竞争窗口
+            return Task.Delay(5, cancellationToken).ContinueWith(
+                _ => new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(_tokenJson, Encoding.UTF8, "application/json")
+                },
+                cancellationToken,
+                TaskContinuationOptions.None,
+                TaskScheduler.Default);
+        }
+    }
+
+    /// <summary>永不响应的处理程序（用于取消测试）。阻塞直到取消令牌触发。</summary>
+    private sealed class NeverRespondingHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            // 用一个永不完成的 TCS，由传入的 cancellationToken 注册取消回调来触发 TaskCanceledException
+            var tcs = new TaskCompletionSource<HttpResponseMessage>();
+            cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken));
+            return tcs.Task;
+        }
     }
 }

@@ -25,9 +25,9 @@ namespace WeComKit.MsgAudit;
 ///   }
 /// </code>
 /// </summary>
-public class WeComFinanceSdk : IDisposable, IAsyncDisposable
+public class WeComFinanceSdk : IDisposable, IAsyncDisposable, IMsgAuditChatDataSource
 {
-    private IntPtr _sdkPtr = IntPtr.Zero;
+    private SdkHandle? _sdkHandle;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private volatile bool _disposed;
     private readonly string _corpId;
@@ -218,6 +218,16 @@ public class WeComFinanceSdk : IDisposable, IAsyncDisposable
 
     #endregion
 
+    #region IMsgAuditChatDataSource（显式实现，供 MsgAuditSessionReader 使用）
+
+    Task<ChatDataResponse> IMsgAuditChatDataSource.GetChatDataAsync(ulong seq, uint limit, CancellationToken cancellationToken)
+        => GetChatDataResponseAsync(seq, limit, timeout: 30, cancellationToken);
+
+    Task<ChatRecord> IMsgAuditChatDataSource.DecryptChatRecordAsync(string decryptedKey, string encryptChatMsg, CancellationToken cancellationToken)
+        => DecryptChatRecordAsync(decryptedKey, encryptChatMsg, cancellationToken);
+
+    #endregion
+
     #region 静态方法
 
     /// <summary>
@@ -232,17 +242,16 @@ public class WeComFinanceSdk : IDisposable, IAsyncDisposable
 
         FinanceSdkNative.EnsureResolverRegistered();
 
-        var slicePtr = FinanceSdkNative.NewSlice();
+        using var slice = SliceHandle.Create();
         try
         {
-            ThrowOnError(FinanceSdkNative.DecryptData(decryptedKey, encryptMsg, slicePtr), "DecryptData");
-            return ReadSlice(slicePtr);
+            ThrowOnError(FinanceSdkNative.DecryptData(decryptedKey, encryptMsg, slice), "DecryptData");
+            return ReadSlice(slice);
         }
         catch (Exception ex) when (ex is AccessViolationException or SEHException)
         {
             throw new WeComFinanceSdkException(-1, "DecryptData", ex);
         }
-        finally { FinanceSdkNative.FreeSlice(slicePtr); }
     }
 
     /// <summary>
@@ -425,25 +434,27 @@ public class WeComFinanceSdk : IDisposable, IAsyncDisposable
 
         // 3. SDK 功能测试
         steps.Add("[3] SDK 功能测试");
-        IntPtr sdkPtr = IntPtr.Zero;
-        IntPtr slicePtr = IntPtr.Zero;
+        SdkHandle? sdkHandle = null;
+        SliceHandle? sliceHandle = null;
         try
         {
-            sdkPtr = FinanceSdkNative.NewSdk();
-            steps.Add($"  NewSdk: {(sdkPtr != IntPtr.Zero ? "OK" : "NULL")}");
-            if (sdkPtr == IntPtr.Zero) return steps;
+            var rawSdk = FinanceSdkNative.NewSdk();
+            steps.Add($"  NewSdk: {(rawSdk != IntPtr.Zero ? "OK" : "NULL")}");
+            if (rawSdk == IntPtr.Zero) return steps;
 
-            var ret = FinanceSdkNative.Init(sdkPtr, corpId, secret);
+            sdkHandle = SdkHandle.FromRaw(rawSdk);
+
+            var ret = FinanceSdkNative.Init(sdkHandle, corpId, secret);
             steps.Add($"  Init: {ret} {(ret == 0 ? "OK" : $"({((SdkErrorCode)ret).GetDescription()})")}");
             if (ret != 0) return steps;
 
-            slicePtr = FinanceSdkNative.NewSlice();
-            ret = FinanceSdkNative.GetChatData(sdkPtr, 0, 1, null, null, 30, slicePtr);
-            var preview = ReadSlice(slicePtr);
+            sliceHandle = SliceHandle.Create();
+            ret = FinanceSdkNative.GetChatData(sdkHandle, 0, 1, null, null, 30, sliceHandle);
+            var preview = ReadSlice(sliceHandle);
             steps.Add($"  GetChatData(seq=0,limit=1): {ret}, 长度={preview.Length}");
 
-            FinanceSdkNative.DestroySdk(sdkPtr);
-            sdkPtr = IntPtr.Zero;
+            sdkHandle.Dispose();
+            sdkHandle = null;
             steps.Add("  DestroySdk: OK");
             steps.Add("诊断完成：全部通过");
         }
@@ -453,11 +464,8 @@ public class WeComFinanceSdk : IDisposable, IAsyncDisposable
         }
         finally
         {
-            if (slicePtr != IntPtr.Zero) FinanceSdkNative.FreeSlice(slicePtr);
-            if (sdkPtr != IntPtr.Zero)
-            {
-                try { FinanceSdkNative.DestroySdk(sdkPtr); } catch { /* best-effort */ }
-            }
+            sliceHandle?.Dispose();
+            sdkHandle?.Dispose();
         }
 
         return steps;
@@ -467,11 +475,11 @@ public class WeComFinanceSdk : IDisposable, IAsyncDisposable
 
     #region Slice 读取
 
-    private static string ReadSlice(IntPtr slicePtr)
+    private static string ReadSlice(SliceHandle slice)
     {
-        if (slicePtr == IntPtr.Zero) return string.Empty;
-        var contentPtr = FinanceSdkNative.GetContentFromSlice(slicePtr);
-        var len = FinanceSdkNative.GetSliceLen(slicePtr);
+        if (slice.IsInvalid) return string.Empty;
+        var contentPtr = FinanceSdkNative.GetContentFromSlice(slice);
+        var len = FinanceSdkNative.GetSliceLen(slice);
         if (contentPtr == IntPtr.Zero || len <= 0) return string.Empty;
         return Marshal.PtrToStringUTF8(contentPtr, len) ?? string.Empty;
     }
@@ -504,34 +512,38 @@ public class WeComFinanceSdk : IDisposable, IAsyncDisposable
 
     private void InitializeCore()
     {
-        if (_sdkPtr != IntPtr.Zero) return;
+        if (_sdkHandle is not null) return;
 
-        try { _sdkPtr = FinanceSdkNative.NewSdk(); }
+        IntPtr raw;
+        try { raw = FinanceSdkNative.NewSdk(); }
         catch (Exception ex) when (ex is AccessViolationException or SEHException or DllNotFoundException)
         { throw new WeComFinanceSdkException(-1, "NewSdk", ex); }
 
-        if (_sdkPtr == IntPtr.Zero)
+        if (raw == IntPtr.Zero)
             throw new WeComFinanceSdkException(-1, "NewSdk");
 
-        try { ThrowOnError(FinanceSdkNative.Init(_sdkPtr, _corpId, _secret), "Init"); }
+        var handle = SdkHandle.FromRaw(raw);
+
+        try { ThrowOnError(FinanceSdkNative.Init(handle, _corpId, _secret), "Init"); }
         catch
         {
-            try { FinanceSdkNative.DestroySdk(_sdkPtr); } catch { }
-            _sdkPtr = IntPtr.Zero;
+            handle.Dispose();
             throw;
         }
+
+        _sdkHandle = handle;
     }
 
     private void EnsureInitialized()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_sdkPtr == IntPtr.Zero) InitializeCore();
+        if (_sdkHandle is null) InitializeCore();
     }
 
     private async Task EnsureInitializedAsync(CancellationToken ct)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_sdkPtr == IntPtr.Zero)
+        if (_sdkHandle is null)
             await Task.Run(InitializeCore, ct).ConfigureAwait(false);
     }
 
@@ -541,17 +553,16 @@ public class WeComFinanceSdk : IDisposable, IAsyncDisposable
 
     private string GetChatDataCore(ulong seq, uint limit, int timeout)
     {
-        var slicePtr = FinanceSdkNative.NewSlice();
+        using var slice = SliceHandle.Create();
         try
         {
-            ThrowOnError(FinanceSdkNative.GetChatData(_sdkPtr, seq, limit, null, null, timeout, slicePtr), "GetChatData");
-            return ReadSlice(slicePtr);
+            ThrowOnError(FinanceSdkNative.GetChatData(_sdkHandle!, seq, limit, null, null, timeout, slice), "GetChatData");
+            return ReadSlice(slice);
         }
         catch (Exception ex) when (ex is AccessViolationException or SEHException)
         {
             throw new WeComFinanceSdkException(-1, "GetChatData", ex);
         }
-        finally { FinanceSdkNative.FreeSlice(slicePtr); }
     }
 
     private void DownloadMediaCore(string sdkFileId, Stream target, int timeout)
@@ -561,14 +572,17 @@ public class WeComFinanceSdk : IDisposable, IAsyncDisposable
 
         while (!finished)
         {
-            var mediaPtr = FinanceSdkNative.NewMediaData();
+            using var media = MediaDataHandle.Create();
             try
             {
-                ThrowOnError(FinanceSdkNative.GetMediaData(_sdkPtr, indexBuf, sdkFileId, null, null, timeout, mediaPtr), "GetMediaData");
+                ThrowOnError(FinanceSdkNative.GetMediaData(_sdkHandle!, indexBuf, sdkFileId, null, null, timeout, media), "GetMediaData");
 
-                var dataPtr = FinanceSdkNative.GetData(mediaPtr);
-                var dataLen = FinanceSdkNative.GetDataLen(mediaPtr);
-                if (dataLen > 0 && dataPtr != IntPtr.Zero)
+                var dataPtr = FinanceSdkNative.GetData(media);
+                var dataLen = FinanceSdkNative.GetDataLen(media);
+
+                // native length 不可信：负数 / 超大值直接拒绝，避免 Marshal.Copy 越界
+                const int MaxChunkBytes = 256 * 1024 * 1024; // 256 MB
+                if (dataLen > 0 && dataPtr != IntPtr.Zero && dataLen <= MaxChunkBytes)
                 {
                     var buffer = ArrayPool<byte>.Shared.Rent(dataLen);
                     try
@@ -579,11 +593,11 @@ public class WeComFinanceSdk : IDisposable, IAsyncDisposable
                     finally { ArrayPool<byte>.Shared.Return(buffer); }
                 }
 
-                finished = FinanceSdkNative.IsMediaDataFinish(mediaPtr) == 1;
+                finished = FinanceSdkNative.IsMediaDataFinish(media) == 1;
                 if (!finished)
                 {
-                    var outIndexPtr = FinanceSdkNative.GetOutIndexBuf(mediaPtr);
-                    var outIndexLen = FinanceSdkNative.GetIndexLen(mediaPtr);
+                    var outIndexPtr = FinanceSdkNative.GetOutIndexBuf(media);
+                    var outIndexLen = FinanceSdkNative.GetIndexLen(media);
                     indexBuf = (outIndexPtr != IntPtr.Zero && outIndexLen > 0)
                         ? Marshal.PtrToStringUTF8(outIndexPtr, outIndexLen) ?? ""
                         : "";
@@ -593,7 +607,6 @@ public class WeComFinanceSdk : IDisposable, IAsyncDisposable
             {
                 throw new WeComFinanceSdkException(-1, "GetMediaData", ex);
             }
-            finally { FinanceSdkNative.FreeMediaData(mediaPtr); }
         }
     }
 
@@ -637,10 +650,12 @@ public class WeComFinanceSdk : IDisposable, IAsyncDisposable
 
     private void DisposeNative()
     {
-        if (_sdkPtr != IntPtr.Zero)
+        // SafeHandle.Dispose 负责实际释放；这里只需解除引用，让 GC 回收 SafeHandle。
+        // 若已显式 Dispose，SafeHandle.ReleaseHandle 会通过 DestroySdkRaw 释放原生句柄。
+        if (_sdkHandle is not null)
         {
-            try { FinanceSdkNative.DestroySdk(_sdkPtr); } catch { }
-            _sdkPtr = IntPtr.Zero;
+            _sdkHandle.Dispose();
+            _sdkHandle = null;
         }
     }
 

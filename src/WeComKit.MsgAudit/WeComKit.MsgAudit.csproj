@@ -8,7 +8,7 @@
 
     <!-- NuGet 包信息 -->
     <PackageId>WeComKit.MsgAudit</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Authors>WeComKit</Authors>
     <Copyright>Copyright (c) 2026 WeComKit contributors</Copyright>
     <Description>企业微信会话存档 SDK 托管封装，线程安全、支持异步、显式加载官方原生 SDK。</Description>
@@ -18,7 +18,7 @@
     <PackageProjectUrl>https://github.com/castorhrio/WeComKit</PackageProjectUrl>
     <RepositoryUrl>https://github.com/castorhrio/WeComKit</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageReleaseNotes>First stable release for the managed WeCom message-audit native SDK wrapper with explicit SDK path resolution and diagnostics.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.1.0: SafeHandle-based native resource lifecycle, MsgAuditSessionReader high-level API with at-least-once checkpoint semantics, hardened native buffer validation.</PackageReleaseNotes>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
@@ -26,6 +26,11 @@
     <!-- 包中不包含任何原生二进制文件，由 FinanceSdkBootstrapper 在运行时发现 -->
     <NoWarn>$(NoWarn);NU5100;NU5110;NU5111</NoWarn>
   </PropertyGroup>
+
+  <!-- 允许测试程序集访问 internal 数据源抽象（用于 MsgAuditSessionReader 单元测试） -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="WeComKit.Tests" />
+  </ItemGroup>
 
   <!-- build/ 目录下的 .targets 会注入到消费项目中 -->
   <ItemGroup>
