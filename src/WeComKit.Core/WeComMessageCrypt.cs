@@ -260,6 +260,11 @@ public class WeComMessageCrypt
 
     private static byte[] AESDecrypt(byte[] encrypted, byte[] aesKey)
     {
+        // 密文必须是 AES 块（16 字节）的整数倍；否则 CryptoStream 收尾时会在
+        // PKCS7Decode 之前抛出框架自带异常，绕过统一的“解密失败”错误路径。
+        if (encrypted.Length == 0 || (encrypted.Length % 16) != 0)
+            throw new CryptographicException("解密失败");
+
         var iv = new byte[16];
         Array.Copy(aesKey, iv, 16);
 

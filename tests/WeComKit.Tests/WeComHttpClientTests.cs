@@ -118,21 +118,30 @@ public class WeComHttpClientTests
     {
         // 模拟 IConfiguration 配置绑定器：它直接写 backing field，绕过 setter 的非负校验。
         // 取用点必须再做一次非负钳制，否则负 skew 会把缓存有效期延长到真实过期之后。
+        //
+        // 区分“钳制”与“缓存延长”：用很短的 expires_in，等待其过期后再调用。
+        // 若 skew 被正确钳为 0，过期后应重新获取（第 2 次请求）；
+        // 若未钳制（bug），负 skew 会把有效期延长 5 分钟，第 2 次仍命中旧缓存 → 测试失败。
         var handler = new QueueHandler(
-            JsonResponse("""{"errcode":0,"errmsg":"ok","access_token":"token-neg","expires_in":7200}"""));
+            JsonResponse("""{"errcode":0,"errmsg":"ok","access_token":"token-a","expires_in":2}"""),
+            JsonResponse("""{"errcode":0,"errmsg":"ok","access_token":"token-b","expires_in":2}"""));
         var options = BaseOptions();
-        // 反射写入 backing field，等效于 binder 行为
+        // 反射写入 backing field，等效于 binder 行为（绕过 setter 的非负校验）
         typeof(WeComOptions)
             .GetField("_tokenRefreshSkew", BindingFlags.NonPublic | BindingFlags.Instance)!
             .SetValue(options, TimeSpan.FromMinutes(-5));
         var client = CreateClientWithOptions(handler, options);
 
         var first = await client.GetAccessTokenAsync();
-        var second = await client.GetAccessTokenAsync(); // 若未钳制，负 skew 不会让 token 提前失效——这里主要验证不抛、缓存正常
+        Assert.Equal("token-a", first);
+        Assert.Single(handler.Requests);
 
-        Assert.Equal("token-neg", first);
-        Assert.Equal("token-neg", second);
-        Assert.Single(handler.Requests); // skew 被钳为 0，缓存有效期 = 7200s，第二次命中缓存
+        // 等待超过 expires_in（2s）后，钳制为 0 的 skew 会让缓存失效 → 第 2 次应刷新
+        await Task.Delay(TimeSpan.FromSeconds(3));
+
+        var second = await client.GetAccessTokenAsync();
+        Assert.Equal("token-b", second);     // 刷新成功
+        Assert.Equal(2, handler.Requests.Count); // 证明不是命中旧缓存（否则只有 1 次请求）
     }
 
     [Fact]

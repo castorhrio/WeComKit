@@ -11,11 +11,16 @@ public class WeComApiException : Exception
     /// <summary>错误码</summary>
     public int ErrorCode { get; }
 
-    /// <summary>错误信息</summary>
+    /// <summary>
+    /// 错误信息。已在构造时脱敏（<see cref="SensitiveDataRedactor.Redact"/>），
+    /// 可能与服务器原文不同。
+    /// </summary>
     public string ErrorMessage { get; }
 
     /// <summary>
-    /// 企业微信返回的原始错误信息（<see cref="ErrorMessage"/> 的别名，语义对齐文档）。
+    /// 企业微信返回的错误信息（<see cref="ErrorMessage"/> 的别名，语义对齐文档）。
+    /// <b>注意：</b>该值已在构造时通过 <see cref="SensitiveDataRedactor.Redact"/> 脱敏，
+    /// 可能与服务器原文不同，<b>不得</b>当作未经处理的原始诊断数据使用。
     /// </summary>
     public string? WeComMessage => ErrorMessage;
 
