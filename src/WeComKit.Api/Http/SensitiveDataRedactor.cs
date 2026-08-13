@@ -14,9 +14,9 @@ public static class SensitiveDataRedactor
     /// <summary>统一脱敏占位符</summary>
     public const string Mask = "***REDACTED***";
 
-    // access_token=xxx / suite_access_token=xxx / secret=xxx / corpsecret=xxx 等查询参数
+    // access_token=xxx / suite_access_token=xxx / secret=xxx / corpsecret=xxx / encodingAESKey=xxx 等查询参数
     private static readonly Regex SensitiveQueryRegex = new(
-        @"(?<key>access_token|suite_access_token|secret|corpsecret|suite_secret|suite_ticket)=" +
+        @"(?<key>access_token|suite_access_token|secret|corpsecret|suite_secret|suite_ticket|encodingaeskey)=" +
         @"[^&\s]*",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 

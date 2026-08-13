@@ -23,10 +23,13 @@ public static class WeComKitServiceExtensions
 
     /// <summary>
     /// 注册企业微信 API 服务，并允许对 <see cref="HttpClient"/> 进行应用层配置
-    /// （Timeout / BaseAddress / DefaultRequestHeaders）。
+    /// （Timeout / DefaultRequestHeaders）。
     /// </summary>
     /// <remarks>
     /// 此重载仅支持 <see cref="HttpClient"/> 层面的配置。
+    /// <b>注意：</b><see cref="WeComHttpClient"/> 通过 <see cref="WeComOptions.ApiUrl"/> 构造绝对 URI，
+    /// 因此在此处设置 <see cref="HttpClient.BaseAddress"/> 不会生效；如需更换 API 地址请配置
+    /// <see cref="WeComOptions.ApiUrl"/>。
     /// 如需自定义 <see cref="HttpMessageHandler"/> / 代理 / 主处理器，
     /// 请改用返回 <c>IHttpClientBuilder</c> 的标准方式，例如：
     /// <code>
