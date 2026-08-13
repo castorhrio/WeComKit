@@ -42,6 +42,17 @@ public class SensitiveDataRedactorTests
     }
 
     [Fact]
+    public void RedactUrl_StripsEncodingAesKey()
+    {
+        var url = "https://example.test/callback?encodingAESKey=AAAABBBBCCCCDDDD&msg_signature=sig";
+
+        var redacted = SensitiveDataRedactor.RedactUrl(url);
+
+        Assert.Contains("encodingAESKey=" + SensitiveDataRedactor.Mask, redacted);
+        Assert.DoesNotContain("AAAABBBBCCCCDDDD", redacted);
+    }
+
+    [Fact]
     public void Redact_MasksAuthorizationHeader()
     {
         var text = "Authorization: Bearer super-secret-bearer-token";

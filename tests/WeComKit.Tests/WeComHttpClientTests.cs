@@ -158,6 +158,85 @@ public class WeComHttpClientTests
         Assert.Throws<ArgumentOutOfRangeException>(() => options.TokenRefreshSkew = TimeSpan.FromMinutes(-1));
     }
 
+    [Fact]
+    public async Task GetAsync_HttpFailure_ThrowsEnrichedExceptionWithPathAndStatus()
+    {
+        // token 成功，但业务请求返回 500 → 应抛出携带 RequestPath（脱敏）/ HttpStatus 的异常
+        var handler = new QueueHandler(
+            JsonResponse("""{"errcode":0,"errmsg":"ok","access_token":"tok","expires_in":7200}"""),
+            new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            {
+                RequestMessage = new HttpRequestMessage(HttpMethod.Get,
+                    "https://example.test/cgi-bin/user/get?access_token=SECRET&userid=zhangsan")
+            });
+        var client = CreateClient(handler);
+
+        var ex = await Assert.ThrowsAsync<WeComApiException>(() =>
+            client.GetAsync<TestApiResult>("/cgi-bin/user/get", new Dictionary<string, string> { ["userid"] = "zhangsan" }));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, ex.HttpStatus);
+        Assert.NotNull(ex.RequestPath);
+        Assert.DoesNotContain("SECRET", ex.RequestPath!);     // access_token 已脱敏
+        Assert.Contains("access_token=***REDACTED***", ex.RequestPath!);
+        Assert.Contains("userid=zhangsan", ex.RequestPath!);  // 非敏感参数保留
+    }
+
+    [Fact]
+    public async Task GetAsync_BusinessError_PreservesErrorCodeAndEnrichesPath()
+    {
+        // HTTP 200 但 errcode != 0 → 异常携带业务错误码 + path/status
+        var handler = new QueueHandler(
+            JsonResponse("""{"errcode":0,"errmsg":"ok","access_token":"tok","expires_in":7200}"""),
+            JsonResponse("""{"errcode":60011,"errmsg":"no privilege to access"}"""));
+        var client = CreateClient(handler);
+
+        var ex = await Assert.ThrowsAsync<WeComApiException>(() =>
+            client.GetAsync<TestApiResult>("/cgi-bin/user/get"));
+
+        Assert.Equal(60011, ex.ErrorCode);
+        Assert.Equal("no privilege to access", ex.ErrorMessage);
+        Assert.Equal(HttpStatusCode.OK, ex.HttpStatus);
+        Assert.NotNull(ex.RequestPath);
+    }
+
+    [Fact]
+    public async Task GetAccessTokenAsync_HttpFailure_ThrowsEnrichedException()
+    {
+        // gettoken 返回 503 → 携带 status/path 的异常
+        var handler = new QueueHandler(
+            new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                RequestMessage = new HttpRequestMessage(HttpMethod.Get,
+                    "https://example.test/cgi-bin/gettoken?corpid=corp&corpsecret=SHHHH")
+            });
+        var client = CreateClient(handler);
+
+        var ex = await Assert.ThrowsAsync<WeComApiException>(() => client.GetAccessTokenAsync());
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, ex.HttpStatus);
+        Assert.DoesNotContain("SHHHH", ex.RequestPath!);
+        Assert.Contains("corpsecret=***REDACTED***", ex.RequestPath!);
+    }
+
+    [Fact]
+    public async Task GetAccessTokenAsync_BusinessError_EnrichesPath()
+    {
+        // QueueHandler 返回的响应需显式带上 RequestMessage，才能还原 RequestPath
+        var response = JsonResponse("""{"errcode":40029,"errmsg":"invalid code"}""");
+        response.RequestMessage = new HttpRequestMessage(HttpMethod.Get,
+            "https://example.test/cgi-bin/gettoken?corpid=corp&corpsecret=SHHHH");
+        var handler = new QueueHandler(response);
+        var client = CreateClient(handler);
+
+        var ex = await Assert.ThrowsAsync<WeComApiException>(() => client.GetAccessTokenAsync());
+
+        Assert.Equal(40029, ex.ErrorCode);
+        Assert.Equal("invalid code", ex.ErrorMessage);
+        Assert.Equal(HttpStatusCode.OK, ex.HttpStatus);
+        Assert.Contains("gettoken", ex.RequestPath!);
+        Assert.DoesNotContain("SHHHH", ex.RequestPath!); // corpsecret 脱敏
+    }
+
     private static WeComHttpClient CreateClient(HttpMessageHandler handler)
     {
         return new WeComHttpClient(new HttpClient(handler), new WeComOptions

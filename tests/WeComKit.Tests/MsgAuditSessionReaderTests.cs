@@ -124,6 +124,28 @@ public class MsgAuditSessionReaderTests
         Assert.Throws<ArgumentNullException>(() => new MsgAuditSessionReader((IMsgAuditChatDataSource)null!, RsaKey.Pem));
     }
 
+    [Fact]
+    public async Task ReadAsync_RejectsNegativeSequence()
+    {
+        // 负数 sequence 不能转成 ulong（会变成超大 cursor）
+        var source = FakeSource.NewBuilder().ChatBatch(0).Build();
+        var reader = new MsgAuditSessionReader(source, RsaKey.Pem);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => reader.ReadAsync(-1));
+    }
+
+    [Fact]
+    public async Task ReadAsync_CancellationPropagates_NotRecordedAsFailure()
+    {
+        // 数据源在 DecryptChatRecordAsync 抛 OperationCanceledException → 必须向上传播，
+        // 而不是记为 message failure 继续处理
+        var source = new CancelingDataSource();
+        var reader = new MsgAuditSessionReader(source, RsaKey.Pem);
+
+        using var cts = new CancellationTokenSource();
+        await Assert.ThrowsAsync<OperationCanceledException>(() => reader.ReadAsync(99, cancellationToken: cts.Token));
+    }
+
     #region fakes
 
     /// <summary>
@@ -157,6 +179,25 @@ public class MsgAuditSessionReaderTests
 
         public Task<ChatRecord> DecryptChatRecordAsync(string decryptedKey, string encryptChatMsg, CancellationToken cancellationToken = default)
             => throw new WeComFinanceSdkException(10002, "DecryptData");
+    }
+
+    /// <summary>
+    /// 返回一条带合法 RSA 加密 key 的消息，但在 DecryptChatRecordAsync 抛 OperationCanceledException，
+    /// 用于验证取消向上传播而非记为 failure。
+    /// </summary>
+    private sealed class CancelingDataSource : IMsgAuditChatDataSource
+    {
+        public Task<ChatDataResponse> GetChatDataAsync(ulong seq, uint limit, CancellationToken cancellationToken = default)
+        {
+            var keyBytes = Encoding.UTF8.GetBytes("rk-100");
+            var encryptedKey = Convert.ToBase64String(RsaKey.PublicKey.Encrypt(keyBytes, RSAEncryptionPadding.Pkcs1));
+            var response = new ChatDataResponse();
+            response.ChatData.Add(new ChatDataItem { Seq = 100, MsgId = "m100", EncryptRandomKey = encryptedKey, EncryptChatMsg = "ok" });
+            return Task.FromResult(response);
+        }
+
+        public Task<ChatRecord> DecryptChatRecordAsync(string decryptedKey, string encryptChatMsg, CancellationToken cancellationToken = default)
+            => throw new OperationCanceledException(cancellationToken);
     }
 
     private sealed record FakeItem(long Seq, string EncryptedRandomKey, bool decryptFails = false);

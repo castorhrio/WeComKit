@@ -10,10 +10,18 @@ namespace WeComKit.Api.Http;
 /// 企业微信 API HTTP 客户端，内置 AccessToken 自动获取、缓存和刷新
 /// </summary>
 /// <remarks>
-/// Retry 策略：本客户端默认不自动重试任何请求。
+/// Retry 策略：
+/// <list type="bullet">
+/// <item><b>网络失败（超时 / 连接错误 / 5xx / 非 WeCom 业务错误）不自动重试。</b>
 /// 网络超时不等于服务端未执行；对 SendMessage / Create 等非幂等 API 而言，
-/// 自动重试可能导致重复副作用（如重复发送消息）。需要重试时由调用方在幂等接口上自行实现，
-/// 并配合 CancellationToken。
+/// 自动重试可能导致重复副作用（如重复发送消息）。</item>
+/// <item><b>AccessToken 错误（40001 / 40014 / 42001）会触发一次重试：</b>
+/// <see cref="GetAsync{T}"/> / <see cref="PostAsync{T}"/> 在收到此类业务错误后失效缓存并刷新 Token，
+/// 然后用新 Token 重发<b>一次</b>（POST 同样会重发，调用方需知悉此可能的重复副作用）。
+/// 可定位（seekable）的 <see cref="PostMultipartAsync{T}"/> 流亦会重发一次。</item>
+/// <item>除上述 Token 错误恢复外，不提供其他自动重试。</item>
+/// </list>
+/// 需要更复杂的重试时由调用方在幂等接口上自行实现，并配合 CancellationToken。
 /// </remarks>
 public class WeComHttpClient : IDisposable
 {
@@ -75,13 +83,47 @@ public class WeComHttpClient : IDisposable
             });
 
             using var response = await _http.GetAsync(url, ct);
-            response.EnsureSuccessStatusCode();
-            var result = await response.Content.ReadFromJsonAsync<WeComTokenResponse>(cancellationToken: ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new WeComApiException(
+                    -1,
+                    $"获取 AccessToken HTTP 失败：{(int)response.StatusCode}",
+                    response.RequestMessage?.RequestUri?.ToString(),
+                    response.StatusCode);
+            }
+
+            WeComTokenResponse? result;
+            try
+            {
+                result = await response.Content.ReadFromJsonAsync<WeComTokenResponse>(cancellationToken: ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                throw new WeComApiException(
+                    -1,
+                    $"获取 AccessToken 响应反序列化失败：{ex.Message}",
+                    response.RequestMessage?.RequestUri?.ToString(),
+                    response.StatusCode);
+            }
 
             if (result is null)
-                throw new WeComApiException(-1, "获取 AccessToken 响应反序列化失败");
+            {
+                throw new WeComApiException(
+                    -1,
+                    "获取 AccessToken 响应为空",
+                    response.RequestMessage?.RequestUri?.ToString(),
+                    response.StatusCode);
+            }
 
-            result.EnsureSuccess();
+            if (result.ErrCode != 0)
+            {
+                throw new WeComApiException(
+                    result.ErrCode,
+                    result.ErrMsg,
+                    response.RequestMessage?.RequestUri?.ToString(),
+                    response.StatusCode);
+            }
 
             // 提前刷新：实际过期时间 - TokenRefreshSkew。
             // 若服务端返回的 ExpiresIn 非法（<=0），不写缓存，下一次调用重新获取。
@@ -246,17 +288,53 @@ public class WeComHttpClient : IDisposable
 
     /// <summary>
     /// 反序列化企业微信 API 响应并检查 errcode。
+    /// HTTP 层失败（非 2xx）与业务层失败（errcode != 0）均抛出携带 RequestPath（已脱敏）/ HttpStatus 的
+    /// <see cref="WeComApiException"/>，避免泄漏敏感查询参数。
     /// </summary>
     public static async Task<T> ReadApiResultAsync<T>(HttpResponseMessage response, string operation, CancellationToken ct = default)
         where T : WeComApiResult
     {
-        response.EnsureSuccessStatusCode();
-        var result = await response.Content.ReadFromJsonAsync<T>(cancellationToken: ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new WeComApiException(
+                -1,
+                $"{operation} HTTP 失败：{(int)response.StatusCode}",
+                response.RequestMessage?.RequestUri?.ToString(),
+                response.StatusCode);
+        }
+
+        T? result;
+        try
+        {
+            result = await response.Content.ReadFromJsonAsync<T>(cancellationToken: ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new WeComApiException(
+                -1,
+                $"{operation} 响应反序列化失败：{ex.Message}",
+                response.RequestMessage?.RequestUri?.ToString(),
+                response.StatusCode);
+        }
 
         if (result is null)
-            throw new WeComApiException(-1, $"{operation} 响应反序列化失败");
+        {
+            throw new WeComApiException(
+                -1,
+                $"{operation} 响应为空",
+                response.RequestMessage?.RequestUri?.ToString(),
+                response.StatusCode);
+        }
 
-        result.EnsureSuccess();
+        if (result.ErrCode != 0)
+        {
+            throw new WeComApiException(
+                result.ErrCode,
+                result.ErrMsg,
+                response.RequestMessage?.RequestUri?.ToString(),
+                response.StatusCode);
+        }
+
         return result;
     }
 
