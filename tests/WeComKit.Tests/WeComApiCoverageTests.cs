@@ -66,6 +66,32 @@ public class WeComApiCoverageTests
     }
 
     [Fact]
+    public async Task SuiteApi_HttpFailure_OperationAndMessage_DoNotLeakSuiteAccessToken()
+    {
+        // suite_access_token 出现在 path 查询串中；HTTP 失败时 operation 文本会被插值进异常。
+        // 异常的 ErrorMessage / Message 不得包含 token 明文。
+        const string secretToken = "SECRET_SUITE_TOKEN_VALUE";
+        var handler = new QueueHandler(
+            new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            {
+                Content = new StringContent("err", Encoding.UTF8, "text/plain")
+            });
+        var api = new WeComSuiteApi(new HttpClient(handler), new WeComSuiteOptions
+        {
+            ApiUrl = "https://example.test",
+            SuiteId = "suite-id",
+            SuiteSecret = "suite-secret"
+        });
+
+        var ex = await Assert.ThrowsAsync<WeComApiException>(() => api.GetPreAuthCodeAsync(secretToken));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, ex.HttpStatus);
+        Assert.DoesNotContain(secretToken, ex.ErrorMessage);
+        Assert.DoesNotContain(secretToken, ex.Message);
+        Assert.DoesNotContain(secretToken, ex.RequestPath ?? string.Empty); // RequestPath 也经脱敏
+    }
+
+    [Fact]
     public async Task SendTemplateCardAsync_FillsDefaultAgentId()
     {
         var handler = new QueueHandler(

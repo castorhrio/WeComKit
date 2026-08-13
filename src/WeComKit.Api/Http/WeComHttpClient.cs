@@ -295,11 +295,20 @@ public class WeComHttpClient : IDisposable
     /// HTTP 层失败（非 2xx）与业务层失败（errcode != 0）均抛出携带 RequestPath（已脱敏）/ HttpStatus 的
     /// <see cref="WeComApiException"/>，避免泄漏敏感查询参数。
     /// </summary>
+    public static Task<T> ReadApiResultAsync<T>(HttpResponseMessage response, string operation, CancellationToken ct = default)
+        where T : WeComApiResult
+        => ReadApiResultAsync<T>(response, operation, requestUrl: null, ct);
+
+    /// <summary>
+    /// 反序列化企业微信 API 响应并检查 errcode（可传入请求 URL 兜底）。
+    /// HTTP 层失败（非 2xx）与业务层失败（errcode != 0）均抛出携带 RequestPath（已脱敏）/ HttpStatus 的
+    /// <see cref="WeComApiException"/>，避免泄漏敏感查询参数。
+    /// </summary>
     /// <param name="requestUrl">
-    /// 可选的请求 URL 兜底：当自定义 <see cref="HttpMessageHandler"/> 返回未带 RequestMessage 的响应时，
+    /// 请求 URL 兜底：当自定义 <see cref="HttpMessageHandler"/> 返回未带 RequestMessage 的响应时，
     /// <c>response.RequestMessage?.RequestUri</c> 可能为 null；此时使用本参数还原 RequestPath。
     /// </param>
-    public static async Task<T> ReadApiResultAsync<T>(HttpResponseMessage response, string operation, string? requestUrl = null, CancellationToken ct = default)
+    public static async Task<T> ReadApiResultAsync<T>(HttpResponseMessage response, string operation, string? requestUrl, CancellationToken ct = default)
         where T : WeComApiResult
     {
         var path = response.RequestMessage?.RequestUri?.ToString() ?? requestUrl;
