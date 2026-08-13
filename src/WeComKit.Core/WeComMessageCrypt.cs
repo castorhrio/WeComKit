@@ -105,7 +105,7 @@ public class WeComMessageCrypt
             {
                 var receivedCorpId = Encoding.UTF8.GetString(plain, corpIdStart, corpIdLen);
                 if (!string.Equals(receivedCorpId, _corpId, StringComparison.Ordinal))
-                    throw new CryptographicException($"CorpId 不匹配：期望 '{_corpId}'，实际 '{receivedCorpId}'");
+                    throw new CryptographicException("CorpId 不匹配");
             }
         }
 
@@ -315,25 +315,42 @@ public class WeComMessageCrypt
         return padded;
     }
 
+    /// <summary>
+    /// PKCS#7 去填充（块大小 32，兼容官方 SDK）。
+    ///
+    /// 安全性：使用 constant-time 累加器校验填充，不在单个字节不匹配时提前返回，
+    /// 且所有失败路径使用同一条错误信息，避免 padding oracle 信息泄漏。
+    /// </summary>
     private static byte[] PKCS7Decode(byte[] input)
     {
-        if (input.Length == 0)
-            return Array.Empty<byte>();
+        // 输入必须是 AES 块（16 字节）的整数倍；否则视为非法密文。
+        if (input.Length == 0 || (input.Length % 16) != 0)
+            throw new CryptographicException("解密失败");
 
         var padAmount = input[^1];
-        if (padAmount < 1 || padAmount > BlockSize)
-            throw new CryptographicException("PKCS#7 填充无效");
+        var len = input.Length;
 
-        if (padAmount > input.Length)
-            throw new CryptographicException("PKCS#7 填充长度无效");
+        // 累加所有“不匹配”，不在任何分支上提前返回；统一错误信息。
+        var diff = 0;
+        if (padAmount < 1 || padAmount > BlockSize) diff |= 1;
+        if (padAmount > len) diff |= 1;
 
-        for (var i = input.Length - padAmount; i < input.Length; i++)
+        // 固定遍历最后 BlockSize 个字节（padAmount 范围上限），用 mask 决定是否参与比较。
+        // padAmount 非法时 padStart 会被钳制为 len（空范围），不会越界；
+        // 即使比较出错也不会影响“已失败”的事实（diff 已置 1）。
+        var padStart = padAmount <= BlockSize ? (len - padAmount) : len;
+        var scanStart = len > BlockSize ? len - BlockSize : 0;
+        for (var i = scanStart; i < len; i++)
         {
-            if (input[i] != padAmount)
-                throw new CryptographicException("PKCS#7 填充内容无效");
+            // i 在 [padStart, len) 内才应等于 padAmount；否则该字节应被忽略。
+            var inPad = i >= padStart ? 1 : 0;
+            diff |= (input[i] ^ padAmount) & (-inPad); // mask: 0 或 0xFF
         }
 
-        var output = new byte[input.Length - padAmount];
+        if (diff != 0)
+            throw new CryptographicException("解密失败");
+
+        var output = new byte[len - padAmount];
         Array.Copy(input, output, output.Length);
         return output;
     }

@@ -29,21 +29,22 @@ public class WeComApiException : Exception
     public HttpStatusCode? HttpStatus { get; }
 
     public WeComApiException(int errorCode, string errorMessage)
-        : base($"企业微信 API 错误 [errcode={errorCode}]: {errorMessage}")
+        : base($"企业微信 API 错误 [errcode={errorCode}]: {SensitiveDataRedactor.Redact(errorMessage)}")
     {
         ErrorCode = errorCode;
-        ErrorMessage = errorMessage;
+        ErrorMessage = SensitiveDataRedactor.Redact(errorMessage);
     }
 
     /// <summary>
     /// 构造 API 异常（携带请求路径与 HTTP 状态码）。
-    /// <paramref name="requestPath"/> 会在内部脱敏后再存储，确保不会泄漏 token / secret。
+    /// <paramref name="requestPath"/> 与 <paramref name="errorMessage"/> 均会在内部脱敏后再存储，
+    /// 确保不会泄漏 query 中的 access_token / secret 等敏感参数。
     /// </summary>
     public WeComApiException(int errorCode, string errorMessage, string? requestPath, HttpStatusCode? httpStatus = null)
-        : base($"企业微信 API 错误 [errcode={errorCode}]: {errorMessage}")
+        : base($"企业微信 API 错误 [errcode={errorCode}]: {SensitiveDataRedactor.Redact(errorMessage)}")
     {
         ErrorCode = errorCode;
-        ErrorMessage = errorMessage;
+        ErrorMessage = SensitiveDataRedactor.Redact(errorMessage);
         RequestPath = SensitiveDataRedactor.RedactUrl(requestPath);
         HttpStatus = httpStatus;
     }

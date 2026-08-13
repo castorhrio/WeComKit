@@ -58,4 +58,26 @@ public class WeComApiExceptionTests
 
         Assert.DoesNotContain("SHHHH", ex.Message);
     }
+
+    [Fact]
+    public void ErrorMessage_IsRedacted_InTwoArgConstructor()
+    {
+        // 防御：即使 errorMessage 里混入 access_token/corpsecret 等敏感串，也应被脱敏。
+        const string secret = "LEAK_TOKEN_xyz";
+        var ex = new WeComApiException(1, $"invalid access_token={secret}");
+
+        Assert.DoesNotContain(secret, ex.ErrorMessage);
+        Assert.DoesNotContain(secret, ex.Message);
+        Assert.Contains("access_token=***REDACTED***", ex.ErrorMessage);
+    }
+
+    [Fact]
+    public void ErrorMessage_IsRedacted_InFourArgConstructor()
+    {
+        const string secret = "LEAK_SECRET_abc";
+        var ex = new WeComApiException(1, $"bad corpsecret={secret}", "/cgi-bin/x", HttpStatusCode.BadRequest);
+
+        Assert.DoesNotContain(secret, ex.ErrorMessage);
+        Assert.DoesNotContain(secret, ex.Message);
+    }
 }

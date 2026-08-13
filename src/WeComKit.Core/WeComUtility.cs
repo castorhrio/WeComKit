@@ -103,7 +103,8 @@ public static class WeComUtility
         }
         catch (Exception ex) when (ex is not CryptographicException)
         {
-            throw new CryptographicException($"RSA 解密失败：{ex.Message}", ex);
+            // 不把内部异常消息拼进对外消息（可能泄漏密钥解析细节）；保留为 InnerException 供排查。
+            throw new CryptographicException("RSA 解密失败", ex);
         }
     }
 

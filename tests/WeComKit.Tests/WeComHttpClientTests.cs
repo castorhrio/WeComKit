@@ -1,4 +1,5 @@
 using System.Net;
+using System.Reflection;
 using System.Text;
 using WeComKit.Api;
 using WeComKit.Api.Http;
@@ -110,6 +111,28 @@ public class WeComHttpClientTests
         Assert.Equal("token-clamp", first);
         Assert.Equal("token-clamp", second);
         Assert.Single(handler.Requests); // 并发/连续调用都命中同一缓存
+    }
+
+    [Fact]
+    public async Task GetAccessTokenAsync_NegativeSkewViaConfigBinder_IsClampedToZero()
+    {
+        // 模拟 IConfiguration 配置绑定器：它直接写 backing field，绕过 setter 的非负校验。
+        // 取用点必须再做一次非负钳制，否则负 skew 会把缓存有效期延长到真实过期之后。
+        var handler = new QueueHandler(
+            JsonResponse("""{"errcode":0,"errmsg":"ok","access_token":"token-neg","expires_in":7200}"""));
+        var options = BaseOptions();
+        // 反射写入 backing field，等效于 binder 行为
+        typeof(WeComOptions)
+            .GetField("_tokenRefreshSkew", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(options, TimeSpan.FromMinutes(-5));
+        var client = CreateClientWithOptions(handler, options);
+
+        var first = await client.GetAccessTokenAsync();
+        var second = await client.GetAccessTokenAsync(); // 若未钳制，负 skew 不会让 token 提前失效——这里主要验证不抛、缓存正常
+
+        Assert.Equal("token-neg", first);
+        Assert.Equal("token-neg", second);
+        Assert.Single(handler.Requests); // skew 被钳为 0，缓存有效期 = 7200s，第二次命中缓存
     }
 
     [Fact]

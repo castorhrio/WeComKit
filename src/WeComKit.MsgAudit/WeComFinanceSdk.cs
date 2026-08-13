@@ -598,7 +598,9 @@ public class WeComFinanceSdk : IDisposable, IAsyncDisposable, IMsgAuditChatDataS
                 {
                     var outIndexPtr = FinanceSdkNative.GetOutIndexBuf(media);
                     var outIndexLen = FinanceSdkNative.GetIndexLen(media);
-                    indexBuf = (outIndexPtr != IntPtr.Zero && outIndexLen > 0)
+                    // native 长度不可信：index buffer 正常很短，加一个上限避免恶意/异常返回触发超大分配。
+                    const int MaxIndexBufBytes = 1024;
+                    indexBuf = (outIndexPtr != IntPtr.Zero && outIndexLen > 0 && outIndexLen <= MaxIndexBufBytes)
                         ? Marshal.PtrToStringUTF8(outIndexPtr, outIndexLen) ?? ""
                         : "";
                 }
