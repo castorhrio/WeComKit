@@ -69,4 +69,28 @@ public class WeComMessageCryptTests
         var hash = SHA1.HashData(Encoding.UTF8.GetBytes(string.Concat(values)));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
+
+    [Fact]
+    public void DecryptRsa_InvalidCiphertext_WrapsAsGenericException_AndPreservesInner()
+    {
+        // 用真实 RSA 私钥（保证 ImportFromPem 成功，且 rsa.Decrypt 确实执行后失败）。
+        var pem = GenerateRsaPem();
+        // 合法 Base64 但不是有效 RSA 密文（长度不匹配 modulus 等）
+        var badCiphertext = Convert.ToBase64String(new byte[16]);
+
+        var ex = Assert.Throws<CryptographicException>(() => WeComUtility.DecryptRsa(badCiphertext, pem));
+
+        Assert.Equal("RSA 解密失败", ex.Message);     // 对外消息统一，不泄漏 provider 文本
+        Assert.NotNull(ex.InnerException);            // 原始异常保留为 InnerException
+    }
+
+    private static string GenerateRsaPem()
+    {
+        using var rsa = RSA.Create(2048);
+        var sb = new StringBuilder();
+        sb.AppendLine("-----BEGIN RSA PRIVATE KEY-----");
+        sb.AppendLine(Convert.ToBase64String(rsa.ExportRSAPrivateKey(), Base64FormattingOptions.InsertLineBreaks));
+        sb.AppendLine("-----END RSA PRIVATE KEY-----");
+        return sb.ToString();
+    }
 }

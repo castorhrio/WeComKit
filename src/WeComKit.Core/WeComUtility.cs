@@ -101,14 +101,10 @@ public static class WeComUtility
             var decrypted = rsa.Decrypt(encrypted, RSAEncryptionPadding.Pkcs1);
             return Encoding.UTF8.GetString(decrypted);
         }
-        catch (CryptographicException)
-        {
-            // 非法密文 / 错误 padding / 错误密钥：统一对外消息，避免泄漏 provider 原始异常文本。
-            throw new CryptographicException("RSA 解密失败");
-        }
         catch (Exception ex)
         {
-            // 其它异常（Base64 解析、PEM 解析等）：同样不把内部消息拼进对外消息；保留为 InnerException 供排查。
+            // 任何异常（非法密文 / 错误 padding / 错误密钥 / Base64 / PEM 解析等）：
+            // 统一对外消息，避免泄漏 provider 原始异常文本；保留原始异常作为 InnerException 供排查。
             throw new CryptographicException("RSA 解密失败", ex);
         }
     }
