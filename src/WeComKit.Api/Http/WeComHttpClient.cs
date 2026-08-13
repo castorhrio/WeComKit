@@ -84,12 +84,16 @@ public class WeComHttpClient : IDisposable
 
             using var response = await _http.GetAsync(url, ct);
 
+            // 自定义 HttpMessageHandler 可能返回不带 RequestMessage 的响应，
+            // 此时用已构造的 url 兜底，保证 RequestPath 始终可还原（经脱敏后写入异常）。
+            var path = response.RequestMessage?.RequestUri?.ToString() ?? url;
+
             if (!response.IsSuccessStatusCode)
             {
                 throw new WeComApiException(
                     -1,
                     $"获取 AccessToken HTTP 失败：{(int)response.StatusCode}",
-                    response.RequestMessage?.RequestUri?.ToString(),
+                    path,
                     response.StatusCode);
             }
 
@@ -103,7 +107,7 @@ public class WeComHttpClient : IDisposable
                 throw new WeComApiException(
                     -1,
                     $"获取 AccessToken 响应反序列化失败：{ex.Message}",
-                    response.RequestMessage?.RequestUri?.ToString(),
+                    path,
                     response.StatusCode);
             }
 
@@ -112,7 +116,7 @@ public class WeComHttpClient : IDisposable
                 throw new WeComApiException(
                     -1,
                     "获取 AccessToken 响应为空",
-                    response.RequestMessage?.RequestUri?.ToString(),
+                    path,
                     response.StatusCode);
             }
 
@@ -121,7 +125,7 @@ public class WeComHttpClient : IDisposable
                 throw new WeComApiException(
                     result.ErrCode,
                     result.ErrMsg,
-                    response.RequestMessage?.RequestUri?.ToString(),
+                    path,
                     response.StatusCode);
             }
 
@@ -185,7 +189,7 @@ public class WeComHttpClient : IDisposable
 
         var url = BuildUrl(path, queryParams, accessToken);
         using var response = await _http.GetAsync(url, ct);
-        return await ReadApiResultAsync<T>(response, $"GET {path}", ct);
+        return await ReadApiResultAsync<T>(response, $"GET {path}", url, ct);
     }
 
     /// <summary>
@@ -222,7 +226,7 @@ public class WeComHttpClient : IDisposable
             ? await _http.PostAsync(url, null, ct)
             : await _http.PostAsJsonAsync(url, body, JsonOptions, ct);
 
-        return await ReadApiResultAsync<T>(response, $"POST {path}", ct);
+        return await ReadApiResultAsync<T>(response, $"POST {path}", url, ct);
     }
 
     /// <summary>
@@ -237,7 +241,7 @@ public class WeComHttpClient : IDisposable
             ? await _http.PostAsync(url, null, ct)
             : await _http.PostAsJsonAsync(url, body, JsonOptions, ct);
 
-        return await ReadApiResultAsync<T>(response, $"POST {path}", ct);
+        return await ReadApiResultAsync<T>(response, $"POST {path}", url, ct);
     }
 
     /// <summary>
@@ -283,7 +287,7 @@ public class WeComHttpClient : IDisposable
         content.Add(streamContent, "media", fileName);
 
         using var response = await _http.PostAsync(url, content, ct);
-        return await ReadApiResultAsync<T>(response, $"POST {path} 上传", ct);
+        return await ReadApiResultAsync<T>(response, $"POST {path} 上传", url, ct);
     }
 
     /// <summary>
@@ -291,15 +295,21 @@ public class WeComHttpClient : IDisposable
     /// HTTP 层失败（非 2xx）与业务层失败（errcode != 0）均抛出携带 RequestPath（已脱敏）/ HttpStatus 的
     /// <see cref="WeComApiException"/>，避免泄漏敏感查询参数。
     /// </summary>
-    public static async Task<T> ReadApiResultAsync<T>(HttpResponseMessage response, string operation, CancellationToken ct = default)
+    /// <param name="requestUrl">
+    /// 可选的请求 URL 兜底：当自定义 <see cref="HttpMessageHandler"/> 返回未带 RequestMessage 的响应时，
+    /// <c>response.RequestMessage?.RequestUri</c> 可能为 null；此时使用本参数还原 RequestPath。
+    /// </param>
+    public static async Task<T> ReadApiResultAsync<T>(HttpResponseMessage response, string operation, string? requestUrl = null, CancellationToken ct = default)
         where T : WeComApiResult
     {
+        var path = response.RequestMessage?.RequestUri?.ToString() ?? requestUrl;
+
         if (!response.IsSuccessStatusCode)
         {
             throw new WeComApiException(
                 -1,
                 $"{operation} HTTP 失败：{(int)response.StatusCode}",
-                response.RequestMessage?.RequestUri?.ToString(),
+                path,
                 response.StatusCode);
         }
 
@@ -313,7 +323,7 @@ public class WeComHttpClient : IDisposable
             throw new WeComApiException(
                 -1,
                 $"{operation} 响应反序列化失败：{ex.Message}",
-                response.RequestMessage?.RequestUri?.ToString(),
+                path,
                 response.StatusCode);
         }
 
@@ -322,7 +332,7 @@ public class WeComHttpClient : IDisposable
             throw new WeComApiException(
                 -1,
                 $"{operation} 响应为空",
-                response.RequestMessage?.RequestUri?.ToString(),
+                path,
                 response.StatusCode);
         }
 
@@ -331,7 +341,7 @@ public class WeComHttpClient : IDisposable
             throw new WeComApiException(
                 result.ErrCode,
                 result.ErrMsg,
-                response.RequestMessage?.RequestUri?.ToString(),
+                path,
                 response.StatusCode);
         }
 

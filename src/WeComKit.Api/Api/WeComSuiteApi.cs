@@ -97,15 +97,17 @@ public class WeComSuiteApi
     private async Task<T> GetAsync<T>(string path, CancellationToken ct)
         where T : WeComApiResult
     {
-        using var response = await _http.GetAsync(BuildUrl(path), ct);
-        return await WeComHttpClient.ReadApiResultAsync<T>(response, $"GET {path}", ct);
+        var url = BuildUrl(path);
+        using var response = await _http.GetAsync(url, ct);
+        return await WeComHttpClient.ReadApiResultAsync<T>(response, $"GET {path}", url, ct);
     }
 
     private async Task<T> PostAsync<T>(string path, object body, CancellationToken ct)
         where T : WeComApiResult
     {
-        using var response = await _http.PostAsJsonAsync(BuildUrl(path), body, WeComHttpClient.JsonOptions, ct);
-        return await WeComHttpClient.ReadApiResultAsync<T>(response, $"POST {path}", ct);
+        var url = BuildUrl(path);
+        using var response = await _http.PostAsJsonAsync(url, body, WeComHttpClient.JsonOptions, ct);
+        return await WeComHttpClient.ReadApiResultAsync<T>(response, $"POST {path}", url, ct);
     }
 
     private string BuildUrl(string path)

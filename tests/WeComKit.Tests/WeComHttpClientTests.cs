@@ -219,6 +219,27 @@ public class WeComHttpClientTests
     }
 
     [Fact]
+    public async Task GetAsync_ResponseWithoutRequestMessage_FallsBackToConstructedUrl()
+    {
+        // 自定义 handler 返回不带 RequestMessage 的响应（如某些 mock handler）。
+        // RequestPath 必须从已构造的请求 URL 还原，并脱敏 access_token。
+        var handler = new QueueHandler(
+            JsonResponse("""{"errcode":0,"errmsg":"ok","access_token":"tok","expires_in":7200}"""),
+            new HttpResponseMessage(HttpStatusCode.BadGateway) { Content = new StringContent("upstream down", Encoding.UTF8, "text/plain") });
+        var client = CreateClient(handler);
+
+        var ex = await Assert.ThrowsAsync<WeComApiException>(() =>
+            client.GetAsync<TestApiResult>("/cgi-bin/user/get", new Dictionary<string, string> { ["userid"] = "zhangsan" }));
+
+        Assert.Equal(HttpStatusCode.BadGateway, ex.HttpStatus);
+        Assert.NotNull(ex.RequestPath);
+        Assert.NotEmpty(ex.RequestPath!);
+        Assert.Contains("/cgi-bin/user/get", ex.RequestPath!);
+        Assert.Contains("access_token=***REDACTED***", ex.RequestPath!); // 兜底 URL 仍经脱敏
+        Assert.Contains("userid=zhangsan", ex.RequestPath!);
+    }
+
+    [Fact]
     public async Task GetAccessTokenAsync_BusinessError_EnrichesPath()
     {
         // QueueHandler 返回的响应需显式带上 RequestMessage，才能还原 RequestPath
