@@ -97,15 +97,25 @@ public class WeComSuiteApi
     private async Task<T> GetAsync<T>(string path, CancellationToken ct)
         where T : WeComApiResult
     {
-        using var response = await _http.GetAsync(BuildUrl(path), ct);
-        return await WeComHttpClient.ReadApiResultAsync<T>(response, $"GET {path}", ct);
+        var url = BuildUrl(path);
+        using var response = await _http.GetAsync(url, ct);
+        // operation 仅用 endpoint path（剥离查询串），避免 suite_access_token 进入异常文本/日志
+        return await WeComHttpClient.ReadApiResultAsync<T>(response, $"GET {StripQuery(path)}", url, ct);
     }
 
     private async Task<T> PostAsync<T>(string path, object body, CancellationToken ct)
         where T : WeComApiResult
     {
-        using var response = await _http.PostAsJsonAsync(BuildUrl(path), body, WeComHttpClient.JsonOptions, ct);
-        return await WeComHttpClient.ReadApiResultAsync<T>(response, $"POST {path}", ct);
+        var url = BuildUrl(path);
+        using var response = await _http.PostAsJsonAsync(url, body, WeComHttpClient.JsonOptions, ct);
+        return await WeComHttpClient.ReadApiResultAsync<T>(response, $"POST {StripQuery(path)}", url, ct);
+    }
+
+    /// <summary>剥离 path 中的查询串（? 之后），返回纯 endpoint path，用于异常 operation 文本。</summary>
+    private static string StripQuery(string path)
+    {
+        var i = path.IndexOf('?');
+        return i >= 0 ? path[..i] : path;
     }
 
     private string BuildUrl(string path)
