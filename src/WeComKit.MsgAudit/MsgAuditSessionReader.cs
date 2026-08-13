@@ -50,6 +50,10 @@ public sealed class MsgAuditSessionReader
     /// <param name="cancellationToken">取消令牌</param>
     public async Task<MsgAuditReadResult> ReadAsync(long sequence, uint limit = 1000, CancellationToken cancellationToken = default)
     {
+        // 负数 sequence 不能转换成 ulong（会变成超大 cursor），先拒绝
+        if (sequence < 0)
+            throw new ArgumentOutOfRangeException(nameof(sequence), "sequence 不能为负数");
+
         // 1. 拉取（SDK errcode != 0 时 GetChatDataAsync 内部会抛 WeComFinanceSdkException，不推进 cursor）
         var response = await _source.GetChatDataAsync((ulong)sequence, limit, cancellationToken).ConfigureAwait(false);
 
@@ -96,6 +100,11 @@ public sealed class MsgAuditSessionReader
                 // DecryptData 解密消息体
                 var record = await _source.DecryptChatRecordAsync(randomKey, item.EncryptChatMsg, ct).ConfigureAwait(false);
                 return new MsgAuditMessage { Seq = item.Seq, MsgId = item.MsgId, Record = record };
+            }
+            catch (OperationCanceledException)
+            {
+                // 取消不是“处理失败”，必须向上传播，不得记为 failure
+                throw;
             }
             catch (Exception ex)
             {

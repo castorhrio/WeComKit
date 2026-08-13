@@ -106,13 +106,16 @@ public class WeComCallbackSecurityTests
     }
 
     [Fact]
-    public void DecryptMsg_RejectsInvalidPadding()
+    public void DecryptMsg_RejectsCorruptedCiphertext_Deterministically()
     {
         var crypt = NewCrypt();
-        // 32 字节随机数据（合法 AES 块对齐，但 padding 几乎必然非法）
-        var garbage = new byte[32];
-        RandomNumberGenerator.Fill(garbage);
-        Assert.Throws<CryptographicException>(() => crypt.DecryptMsg(Convert.ToBase64String(garbage)));
+        // 用真实密文，确定性地破坏最后一个密文字节。
+        // 解密后 PKCS#7 padding 与明文长度/CorpId 校验必然失败 → CryptographicException。
+        // （不使用随机数据：随机字节存在小概率合法 padding，导致非确定性。）
+        var encrypted = Convert.FromBase64String(crypt.EncryptMsg(PlainPayload));
+        encrypted[^1] ^= 0xFF; // 确定性翻转最后一字节
+
+        Assert.Throws<CryptographicException>(() => crypt.DecryptMsg(Convert.ToBase64String(encrypted)));
     }
 
     [Fact]
