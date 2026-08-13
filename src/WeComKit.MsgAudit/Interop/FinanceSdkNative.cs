@@ -18,24 +18,29 @@ internal static class FinanceSdkNative
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr NewSdk();
 
+    /// <summary>初始化 SDK。句柄以 SafeHandle 形式传入，运行时会在调用期间增加引用计数。</summary>
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern int Init(IntPtr sdk, [MarshalAs(UnmanagedType.LPStr)] string corpid, [MarshalAs(UnmanagedType.LPStr)] string secret);
+    public static extern int Init(SdkHandle sdk, [MarshalAs(UnmanagedType.LPStr)] string corpid, [MarshalAs(UnmanagedType.LPStr)] string secret);
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void DestroySdk(IntPtr sdk);
+    /// <summary>
+    /// 释放 SDK 句柄（原始 IntPtr 入口）。
+    /// 仅供 <see cref="SdkHandle.ReleaseHandle"/> 调用，不应在普通业务路径中使用。
+    /// </summary>
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "DestroySdk")]
+    public static extern void DestroySdkRaw(IntPtr sdk);
 
     #endregion
 
     #region 消息操作
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern int GetChatData(IntPtr sdk, ulong seq, uint limit, [MarshalAs(UnmanagedType.LPStr)] string? proxy, [MarshalAs(UnmanagedType.LPStr)] string? passwd, int timeout, IntPtr chatDatas);
+    public static extern int GetChatData(SdkHandle sdk, ulong seq, uint limit, [MarshalAs(UnmanagedType.LPStr)] string? proxy, [MarshalAs(UnmanagedType.LPStr)] string? passwd, int timeout, SliceHandle chatDatas);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern int DecryptData([MarshalAs(UnmanagedType.LPStr)] string encrypt_key, [MarshalAs(UnmanagedType.LPStr)] string encrypt_msg, IntPtr msg);
+    public static extern int DecryptData([MarshalAs(UnmanagedType.LPStr)] string encrypt_key, [MarshalAs(UnmanagedType.LPStr)] string encrypt_msg, SliceHandle msg);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern int GetMediaData(IntPtr sdk, [MarshalAs(UnmanagedType.LPStr)] string indexbuf, [MarshalAs(UnmanagedType.LPStr)] string sdkFileid, [MarshalAs(UnmanagedType.LPStr)] string? proxy, [MarshalAs(UnmanagedType.LPStr)] string? passwd, int timeout, IntPtr media_data);
+    public static extern int GetMediaData(SdkHandle sdk, [MarshalAs(UnmanagedType.LPStr)] string indexbuf, [MarshalAs(UnmanagedType.LPStr)] string sdkFileid, [MarshalAs(UnmanagedType.LPStr)] string? proxy, [MarshalAs(UnmanagedType.LPStr)] string? passwd, int timeout, MediaDataHandle media_data);
 
     #endregion
 
@@ -44,14 +49,15 @@ internal static class FinanceSdkNative
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr NewSlice();
 
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void FreeSlice(IntPtr slice);
+    /// <summary>释放 Slice（原始 IntPtr 入口），仅供 <see cref="SliceHandle.ReleaseHandle"/> 调用。</summary>
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "FreeSlice")]
+    public static extern void FreeSliceRaw(IntPtr slice);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern IntPtr GetContentFromSlice(IntPtr slice);
+    public static extern IntPtr GetContentFromSlice(SliceHandle slice);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern int GetSliceLen(IntPtr slice);
+    public static extern int GetSliceLen(SliceHandle slice);
 
     #endregion
 
@@ -60,23 +66,26 @@ internal static class FinanceSdkNative
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr NewMediaData();
 
+    /// <summary>释放 MediaData（原始 IntPtr 入口），仅供 <see cref="MediaDataHandle.ReleaseHandle"/> 调用。</summary>
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl, EntryPoint = "FreeMediaData")]
+    public static extern void FreeMediaDataRaw(IntPtr mediaData);
+
+    // 注意：GetData 返回的是 borrowed buffer 指针（非受托管句柄），故返回 IntPtr；
+    // 调用方需确保 mediaData 在使用该指针期间保持存活（在 using 块内使用）。
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern void FreeMediaData(IntPtr mediaData);
+    public static extern IntPtr GetData(MediaDataHandle mediaData);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern IntPtr GetData(IntPtr mediaData);
+    public static extern int GetDataLen(MediaDataHandle mediaData);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern int GetDataLen(IntPtr mediaData);
+    public static extern int IsMediaDataFinish(MediaDataHandle mediaData);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern int IsMediaDataFinish(IntPtr mediaData);
+    public static extern IntPtr GetOutIndexBuf(MediaDataHandle mediaData);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern IntPtr GetOutIndexBuf(IntPtr mediaData);
-
-    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    public static extern int GetIndexLen(IntPtr mediaData);
+    public static extern int GetIndexLen(MediaDataHandle mediaData);
 
     #endregion
 

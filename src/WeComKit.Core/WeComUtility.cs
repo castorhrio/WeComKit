@@ -28,7 +28,7 @@ public static class WeComUtility
             return false;
 
         var computed = WeComMessageCrypt.ComputeSignature(token, timestamp, nonce);
-        return string.Equals(computed, signature, StringComparison.OrdinalIgnoreCase);
+        return WeComSecurityCompare.FixedTimeHexEquals(computed, signature);
     }
 
     /// <summary>

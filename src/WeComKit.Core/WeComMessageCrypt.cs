@@ -56,7 +56,7 @@ public class WeComMessageCrypt
             return false;
 
         var computed = ComputeSignature(_token, timestamp, nonce, data);
-        return string.Equals(computed, msgSignature, StringComparison.OrdinalIgnoreCase);
+        return WeComSecurityCompare.FixedTimeHexEquals(computed, msgSignature);
     }
 
     /// <summary>
@@ -70,7 +70,15 @@ public class WeComMessageCrypt
         if (string.IsNullOrEmpty(encryptedMsg))
             throw new ArgumentNullException(nameof(encryptedMsg));
 
-        var encrypted = Convert.FromBase64String(encryptedMsg);
+        byte[] encrypted;
+        try
+        {
+            encrypted = Convert.FromBase64String(encryptedMsg);
+        }
+        catch (FormatException)
+        {
+            throw new CryptographicException("Base64 解码失败");
+        }
         var plain = AESDecrypt(encrypted, _aesKey);
 
         if (plain.Length < RandomBytesLen + NetworkOrderLen)
@@ -139,6 +147,71 @@ public class WeComMessageCrypt
     {
         if (!VerifySignature(msgSignature, timestamp, nonce, encryptedMsg))
             throw new UnauthorizedAccessException("签名验证失败");
+        return DecryptMsg(encryptedMsg);
+    }
+
+    /// <summary>
+    /// 完整的回调安全校验 + 解密流程（异步、可配置）。
+    ///
+    /// 执行顺序：签名 → Timestamp → Replay（可选）→ AES 解密。
+    /// 各安全门禁的失败对应异常：
+    /// <list type="bullet">
+    /// <item>签名不匹配 → <see cref="WeComCallbackValidationException"/>（<see cref="WeComCallbackValidationFailure.InvalidSignature"/>）</item>
+    /// <item>Timestamp 非法 → <see cref="WeComCallbackValidationException"/>（<see cref="WeComCallbackValidationFailure.InvalidTimestamp"/>）</item>
+    /// <item>Replay 检测命中 → <see cref="WeComCallbackValidationException"/>（<see cref="WeComCallbackValidationFailure.ReplayRejected"/>）</item>
+    /// <item>AES 解密失败 → <see cref="CryptographicException"/></item>
+    /// </list>
+    /// </summary>
+    /// <param name="msgSignature">企业微信传入的 msg_signature</param>
+    /// <param name="timestamp">时间戳</param>
+    /// <param name="nonce">随机数</param>
+    /// <param name="encryptedMsg">消息体密文</param>
+    /// <param name="options">回调安全选项</param>
+    /// <param name="replayProtector">可选的重放保护器，传入 null 跳过 Replay 校验</param>
+    /// <param name="cancellationToken">取消令牌</param>
+    /// <returns>解密后的消息明文</returns>
+    public async Task<string> VerifyAndDecryptAsync(
+        string msgSignature,
+        string timestamp,
+        string nonce,
+        string encryptedMsg,
+        WeComCallbackSecurityOptions options,
+        ICallbackReplayProtector? replayProtector = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        // 1. 签名校验（定长时间比较）
+        if (!VerifySignature(msgSignature, timestamp, nonce, encryptedMsg))
+            throw new WeComCallbackValidationException(WeComCallbackValidationFailure.InvalidSignature);
+
+        // 2. Timestamp 校验（语法始终校验；时钟偏差按 options）
+        var validator = new WeComCallbackTimestampValidator();
+        if (!validator.TryValidate(timestamp, options, out var unixTimestamp))
+            throw new WeComCallbackValidationException(WeComCallbackValidationFailure.InvalidTimestamp);
+
+        // 3. Replay 校验（可选）
+        if (replayProtector is not null)
+        {
+            bool accepted;
+            try
+            {
+                accepted = await replayProtector.TryAcceptAsync(nonce, unixTimestamp, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw new WeComCallbackValidationException(WeComCallbackValidationFailure.ReplayRejected, ex);
+            }
+            if (!accepted)
+                throw new WeComCallbackValidationException(WeComCallbackValidationFailure.ReplayRejected);
+        }
+
+        // 4. AES 解密
         return DecryptMsg(encryptedMsg);
     }
 

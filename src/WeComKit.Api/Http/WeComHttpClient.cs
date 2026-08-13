@@ -9,6 +9,12 @@ namespace WeComKit.Api.Http;
 /// <summary>
 /// 企业微信 API HTTP 客户端，内置 AccessToken 自动获取、缓存和刷新
 /// </summary>
+/// <remarks>
+/// Retry 策略：本客户端默认不自动重试任何请求。
+/// 网络超时不等于服务端未执行；对 SendMessage / Create 等非幂等 API 而言，
+/// 自动重试可能导致重复副作用（如重复发送消息）。需要重试时由调用方在幂等接口上自行实现，
+/// 并配合 CancellationToken。
+/// </remarks>
 public class WeComHttpClient : IDisposable
 {
     private static readonly HashSet<int> AccessTokenErrorCodes = new()
@@ -77,8 +83,23 @@ public class WeComHttpClient : IDisposable
 
             result.EnsureSuccess();
 
+            // 提前刷新：实际过期时间 - TokenRefreshSkew。
+            // 若服务端返回的 ExpiresIn 非法（<=0），不写缓存，下一次调用重新获取。
+            // 若配置的 skew >= token 实际有效期，动态 clamp 到 有效期/2，保证仍能短期缓存，
+            // 维持单实例并发下的 single-flight（避免排队打爆 token 接口）。
+            if (result.ExpiresIn <= 0)
+            {
+                _token = null;
+                _tokenExpiry = DateTime.MinValue;
+                return result.AccessToken;
+            }
+
+            var lifetime = TimeSpan.FromSeconds(result.ExpiresIn);
+            var effectiveSkew = _options.TokenRefreshSkew < lifetime
+                ? _options.TokenRefreshSkew
+                : lifetime / 2;
             _token = result.AccessToken;
-            _tokenExpiry = DateTime.UtcNow.AddSeconds(result.ExpiresIn - 300); // 提前 5 分钟刷新
+            _tokenExpiry = DateTime.UtcNow + lifetime - effectiveSkew;
             return _token;
         }
         finally
